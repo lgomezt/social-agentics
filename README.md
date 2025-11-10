@@ -1,5 +1,5 @@
 ## Tech Stack Summary
-It's a full-stack project using React/Vite for the frontend and Python/FastAPI for the backend. Everything is containerized with Docker and set up for development in `docker-compose.dev.yml`.
+It's a full-stack project using React/Vite and Tailwind for the frontend and Python/FastAPI for the backend. Everything is containerized with Docker and set up for development in `docker-compose.dev.yml`.
 
 ## Run the App
 From the repository root, start the full stack with Docker (recommended for consistent dev tooling):
