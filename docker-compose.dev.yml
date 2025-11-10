@@ -1,0 +1,22 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev 
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev 
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000" # Access backend API
+      - "5678:5678" # For the Python debugger
+    env_file:
+      - .env

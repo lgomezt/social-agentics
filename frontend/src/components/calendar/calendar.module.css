@@ -1,0 +1,50 @@
+.calendarGrid {
+  overflow: auto;
+}
+
+.calendarGrid::-webkit-scrollbar {
+  width: 10px;
+}
+
+.calendarGrid::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.45);
+  border-radius: 999px;
+}
+
+.resizeHandle {
+  position: absolute;
+  left: 0.5rem;
+  right: 0.5rem;
+  height: 0.5rem;
+  z-index: 15;
+  cursor: ns-resize;
+}
+
+.resizeHandleTop {
+  top: -0.25rem;
+}
+
+.resizeHandleBottom {
+  bottom: -0.25rem;
+}
+
+.resizeHandle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 3rem;
+  height: 0.25rem;
+  border-radius: 999px;
+  background-color: rgba(99, 102, 241, 0.35);
+}
+
+.resizeHandleUser::after {
+  background-color: rgba(99, 102, 241, 0.55);
+  box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.25);
+}
+
+.resizeHandleBackend::after {
+  background-color: rgba(165, 180, 252, 0.4);
+}

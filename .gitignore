@@ -1,0 +1,30 @@
+# Dependency directories
+node_modules/
+bower_components/
+
+# Build outputs
+dist/
+build/
+public/build/
+*.log
+*.tmp
+
+# Environment files
+.env
+.env.*
+*.env
+
+# IDE/editor
+.vscode/
+.idea/
+.DS_Store
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Docker artifacts
+docker-compose.override.yml
+
+# Misc
+coverage/
