@@ -20,6 +20,7 @@ import {
 } from './calendar.config';
 import {
   busyResponseToEvents,
+  clearBusyEvents,
   fetchBusyEvents,
   syncBusyEvents,
 } from '../../api/calendar';
@@ -208,14 +209,25 @@ const Calendar: React.FC<CalendarProps> = ({
   useEffect(() => {
     let isMounted = true;
 
-    fetchBusyEvents({ title: 'Busy' })
-      .then(backendEvents => {
+    const initializeBusyEvents = async () => {
+      try {
+        await clearBusyEvents();
+      } catch {
+        // Ignore failures while clearing; backend may not have stored state yet
+      }
+
+      try {
+        const backendEvents = await fetchBusyEvents({ title: 'Busy' });
         if (!isMounted || backendEvents.length === 0) return;
         setCalendarEvents(prev =>
           mergeBackendEvents(prev, backendEvents.map(event => ({ ...event, source: 'backend' }))),
         );
-      })
-      .catch(() => null);
+      } catch {
+        // No stored busy events is expected after clearing.
+      }
+    };
+
+    void initializeBusyEvents();
 
     return () => {
       isMounted = false;

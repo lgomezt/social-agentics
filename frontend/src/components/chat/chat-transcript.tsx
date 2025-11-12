@@ -12,7 +12,25 @@ type ChatTranscriptProps = {
 const roleToLabel: Record<ChatMessage['role'], string> = {
   system: 'System',
   user: 'You',
-  assistant: 'Gemini',
+  assistant: 'Agent',
+};
+
+const optionDayFormatter = new Intl.DateTimeFormat([], {
+  weekday: 'short',
+  month: 'short',
+  day: 'numeric',
+});
+const optionTimeFormatter = new Intl.DateTimeFormat([], {
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+const formatOptionTimeRange = (option: RecommendationOption): string => {
+  const startDate = new Date(option.start);
+  const endDate = new Date(option.end);
+  const dayLabel = optionDayFormatter.format(startDate);
+  const timeLabel = `${optionTimeFormatter.format(startDate)} – ${optionTimeFormatter.format(endDate)}`;
+  return `${dayLabel} · ${timeLabel}`;
 };
 
 const ChatTranscript: React.FC<ChatTranscriptProps> = ({
@@ -61,16 +79,26 @@ const ChatTranscript: React.FC<ChatTranscriptProps> = ({
             {options ? (
               <div className="mt-4 flex flex-col gap-2">
                 {options.map(option => {
+                  const timeLabel = formatOptionTimeRange(option);
                   const isAccepted = acceptedOptionId === option.id;
                   return (
                     <div
                       key={option.id}
-                      className={`flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-left text-sm text-amber-900 shadow-sm ${
+                      className={`flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-left text-sm text-amber-900 shadow-sm ${
                         isAccepted ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : ''
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="font-semibold">{option.label}</div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex flex-col">
+                          <span className="font-semibold">{option.label}</span>
+                          <span
+                            className={`text-xs font-medium ${
+                              isAccepted ? 'text-emerald-700' : 'text-amber-700'
+                            }`}
+                          >
+                            {timeLabel}
+                          </span>
+                        </div>
                         <button
                           type="button"
                           onClick={() => onAcceptOption?.(option.id)}
@@ -85,8 +113,12 @@ const ChatTranscript: React.FC<ChatTranscriptProps> = ({
                         </button>
                       </div>
                       {option.reason ? (
-                        <p className="text-xs text-amber-700">
-                          Reason: {option.reason}
+                        <p
+                          className={`text-xs leading-relaxed ${
+                            isAccepted ? 'text-emerald-700' : 'text-amber-700'
+                          }`}
+                        >
+                          {option.reason}
                         </p>
                       ) : null}
                     </div>
@@ -100,7 +132,7 @@ const ChatTranscript: React.FC<ChatTranscriptProps> = ({
       {isLoading ? (
         <div className="flex items-center gap-2 self-start rounded-full border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-medium text-indigo-600 shadow-sm">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-400" />
-          Gemini is thinking…
+           Agent is thinking…
         </div>
       ) : null}
     </div>

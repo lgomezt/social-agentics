@@ -24,7 +24,11 @@ WINDOW_DAYS_ENV_KEY = "RECOMMENDATION_WINDOW_DAYS"
 DEFAULT_MODEL_NAME = "gemini-2.5-pro"
 DEFAULT_DURATION_MINUTES = 60
 DEFAULT_WINDOW_DAYS = 7
+DEFAULT_PROMPT_OPTION_A = "default_system_prompt"
+DEFAULT_PROMPT_OPTION_B = "antrophological_profile.txt"
 
+PROMPT_OPTION_A_ENV_KEY = "GEMINI_PROMPT_OPTION_A"
+PROMPT_OPTION_B_ENV_KEY = "GEMINI_PROMPT_OPTION_B"
 
 def _resolve_env_key(keys: tuple[str, ...]) -> Optional[str]:
     for key in keys:
@@ -66,6 +70,9 @@ except ValueError:
     )
     WINDOW_DAYS = DEFAULT_WINDOW_DAYS
 
+PROMPT_OPTION_A_NAME = os.getenv(PROMPT_OPTION_A_ENV_KEY, DEFAULT_PROMPT_OPTION_A)
+PROMPT_OPTION_B_NAME = os.getenv(PROMPT_OPTION_B_ENV_KEY, DEFAULT_PROMPT_OPTION_B)
+
 
 def _get_client() -> genai.Client:
     if _gemini_client is None:
@@ -99,6 +106,8 @@ def create_recommendations(payload: RecommendationRequest) -> RecommendationResp
             duration_minutes=MEETING_DURATION_MINUTES,
             days_ahead=WINDOW_DAYS,
             model_name=MODEL_NAME,
+            prompt_option_a=PROMPT_OPTION_A_NAME,
+            prompt_option_b=PROMPT_OPTION_B_NAME,
         )
     except ValueError as exc:
         logger.warning("Unable to generate recommendations: %s", exc)

@@ -13,3 +13,8 @@ def set_busy_response(response: BusyResponse) -> None:
 def get_busy_response() -> Optional[BusyResponse]:
     return _latest_busy_response
 
+
+def clear_busy_response() -> None:
+    global _latest_busy_response
+    _latest_busy_response = None
+

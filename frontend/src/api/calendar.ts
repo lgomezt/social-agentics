@@ -155,3 +155,9 @@ export const isoRangeToCalendarEvent = (params: {
   };
 };
 
+export const clearBusyEvents = async (): Promise<void> => {
+  await fetch(`${API_BASE}/busy`, {
+    method: 'DELETE',
+  });
+};
+

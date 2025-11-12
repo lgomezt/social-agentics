@@ -39,7 +39,16 @@ function App() {
   const requestRecommendations = useCallback(
     async (conversation: ChatMessage[], scenarioText: string) => {
       setIsAssistantThinking(true);
-      setCalendarEvents(prev => prev.filter(event => event.source !== 'backend'));
+      setCalendarEvents(prev =>
+        prev.filter(
+          event =>
+            !(
+              event.source === 'backend' &&
+              (event.metadata?.status === 'suggested' ||
+                event.metadata?.status === 'accepted')
+            ),
+        ),
+      );
 
       try {
         const timezone =
@@ -57,32 +66,9 @@ function App() {
           previousOptions: optionsHistory,
         });
 
-        const optionsSummary = (response.options ?? []).map(option => {
-          const startDate = new Date(option.start);
-          const endDate = new Date(option.end);
-          const dayFormatter = new Intl.DateTimeFormat([], {
-            weekday: 'short',
-            month: 'short',
-            day: 'numeric',
-          });
-          const timeFormatter = new Intl.DateTimeFormat([], {
-            hour: '2-digit',
-            minute: '2-digit',
-          });
-
-          const dayLabel = dayFormatter.format(startDate);
-          const timeLabel = `${timeFormatter.format(startDate)} – ${timeFormatter.format(endDate)}`;
-          const reason = option.reason ? ` — ${option.reason}` : '';
-
-          return `${option.label}: ${dayLabel} · ${timeLabel}${reason}`;
-        });
-
         const assistantMessage = createChatMessage({
           role: 'assistant',
-          content:
-            optionsSummary.length > 0
-              ? `${response.message}\n\n${optionsSummary.join('\n')}`
-              : response.message,
+          content: response.message,
           metadata: {
             options: response.options,
           },
@@ -93,7 +79,14 @@ function App() {
         setOptionsHistory(prev => [...prev, ...(response.options ?? [])]);
         setAcceptedOptionId(null);
         setCalendarEvents(prev => {
-          const preserved = prev.filter(event => event.source !== 'backend');
+          const preserved = prev.filter(
+            event =>
+              !(
+                event.source === 'backend' &&
+                (event.metadata?.status === 'suggested' ||
+                  event.metadata?.status === 'accepted')
+              ),
+          );
           const recommendedEvents = recommendationsToCalendarEvents(response.options ?? []);
           return [...preserved, ...recommendedEvents];
         });
@@ -127,11 +120,6 @@ function App() {
       role: 'user',
       content: trimmed,
     });
-    const conversation = [...chatMessages, scenarioMessage].map(message => ({
-      role: message.role,
-      content: message.content,
-    }));
-
     setChatMessages(prev => [...prev, scenarioMessage]);
     setScenarioDraft('');
     setActiveScenario(trimmed);
@@ -224,17 +212,19 @@ function App() {
   );
 
   const hasScenario = Boolean(activeScenario);
-  const transitionClasses =
-    'transition-all duration-500 ease-out';
+  const transitionClasses = 'transition-all duration-500 ease-out';
+  const sidebarGapClass = hasScenario ? 'gap-0' : 'gap-6';
 
   return (
     <div className="h-screen overflow-hidden bg-gradient-to-br from-slate-100 via-white to-slate-100">
       <div className="mx-auto flex h-full flex-col gap-6 px-6 py-8 lg:flex-row">
-        <aside className="flex w-full max-h-full flex-col gap-6 overflow-hidden lg:w-[420px] lg:shrink-0">
+        <aside
+          className={`flex w-full max-h-full flex-col ${sidebarGapClass} overflow-hidden lg:w-[420px] lg:shrink-0`}
+        >
           <div
             className={`${transitionClasses} ${hasScenario ? 'pointer-events-none opacity-0 -translate-y-4 max-h-0 overflow-hidden' : 'opacity-100 translate-y-0 max-h-[800px]'}`}
           >
-            <header className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm shadow-slate-200/60 backdrop-blur">
+            <header className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm shadow-slate-200/60 backdrop-blur mb-6">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-indigo-500">
                 Social Agentics
               </p>

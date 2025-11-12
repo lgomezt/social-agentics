@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Iterable, List, Sequence, Tuple
@@ -9,6 +10,7 @@ from typing import Iterable, List, Sequence, Tuple
 from google import genai
 from google.genai import types
 
+from app.prompts import load_prompt
 from app.schemas import BusyInterval, BusyResponse
 from app.schemas.recommendations import (
     ConversationTurn,
@@ -23,23 +25,7 @@ logger = logging.getLogger(__name__)
 SLOT_INCREMENT_MINUTES = 30
 MAX_CANDIDATE_SLOTS = 168
 
-SYSTEM_PROMPT = """You are a meticulous scheduling assistant that collaborates with a human to propose meetings.
-
-Rules:
-- You must choose exactly two meeting options labelled \"Option A\" and \"Option B\".
-- Only select from the provided available_slots list. Never invent new times.
-- Each option is 60 minutes long and must stay within a single day.
-- Explain briefly why each option works for the provided scenario.
-- Return a JSON object with the schema:
-  {
-    "message": "<plain language summary>",
-    "options": [
-      {"id": "option_a", "label": "Option A", "start": "<ISO8601>", "end": "<ISO8601>", "reason": "<why this option fits>"},
-      {"id": "option_b", "label": "Option B", "start": "<ISO8601>", "end": "<ISO8601>", "reason": "<why this option fits>"}
-    ]
-  }
-- Do not include markdown, explanations, or extra keys outside that object."""
-
+DEFAULT_RECOMMENDATION_MESSAGE = "Here are two meeting options that fit your availability."
 
 @dataclass(frozen=True)
 class CandidateSlot:
@@ -160,6 +146,60 @@ def _format_previous_options(options: Sequence[RecommendationOption]) -> str:
     return "\n".join(lines)
 
 
+def _extract_option_from_payload(
+    payload: dict,
+    *,
+    candidate_keys: dict[str, CandidateSlot],
+    option_id: str,
+    option_label: str,
+) -> tuple[str, RecommendationOption]:
+    if not isinstance(payload, dict):
+        raise ValueError("Gemini response payload must be a JSON object.")
+
+    message = payload.get("message")
+    if not isinstance(message, str) or not message.strip():
+        raise ValueError("Gemini response is missing a descriptive message.")
+
+    option_payload = payload.get("option")
+    if option_payload is None:
+        options_payload = payload.get("options")
+        if isinstance(options_payload, list) and options_payload:
+            option_payload = options_payload[0]
+
+    if not isinstance(option_payload, dict):
+        raise ValueError("Gemini response did not include a single option.")
+
+    try:
+        start_str = option_payload["start"]
+        end_str = option_payload["end"]
+        reason = option_payload.get("reason") or ""
+    except (TypeError, KeyError) as exc:
+        raise ValueError("Gemini option payload is missing required fields.") from exc
+
+    try:
+        start_dt = datetime.fromisoformat(start_str)
+        end_dt = datetime.fromisoformat(end_str)
+    except ValueError as exc:
+        raise ValueError("Gemini option timestamps were not valid ISO datetimes.") from exc
+
+    if start_dt.tzinfo is None or end_dt.tzinfo is None:
+        raise ValueError("Gemini option timestamps must include timezone information.")
+
+    key = f"{start_dt.isoformat()}|{end_dt.isoformat()}"
+    if key not in candidate_keys:
+        raise ValueError(f"Gemini option ({option_label}) did not match any available slot.")
+
+    option = RecommendationOption(
+        id=option_id,
+        label=option_label,
+        start=start_dt,
+        end=end_dt,
+        reason=reason,
+    )
+
+    return message.strip(), option
+
+
 def _call_gemini(
     client: genai.Client,
     model_name: str,
@@ -168,6 +208,8 @@ def _call_gemini(
     slots: Sequence[CandidateSlot],
     conversation: Sequence[ConversationTurn],
     previous_options: Sequence[RecommendationOption],
+    *,
+    system_prompt: str,
 ) -> dict:
     available_slots_text = _format_slots_for_prompt(slots, timezone)
     conversation_text = _conversation_to_bullets(conversation)
@@ -188,7 +230,7 @@ Previous Recommendations:
 Recent Conversation:
 {conversation_text}
 
-Select exactly two options from the numbered list above (Option A and Option B). Use the ISO timestamps in brackets when forming the JSON response.
+Select exactly one option from the numbered list above. Use the ISO timestamps in brackets when forming the JSON response.
 """
 
     logger.debug("Sending prompt to Gemini with %d candidate slots", len(slots))
@@ -201,7 +243,7 @@ Select exactly two options from the numbered list above (Option A and Option B).
     ]
 
     config = types.GenerateContentConfig(
-        system_instruction=SYSTEM_PROMPT,
+        system_instruction=system_prompt,
         temperature=0.35,
         thinking_config=types.ThinkingConfig(thinking_budget=1024),
         response_mime_type="application/json",
@@ -233,6 +275,8 @@ def generate_recommendations(
     duration_minutes: int,
     days_ahead: int,
     model_name: str,
+    prompt_option_a: str,
+    prompt_option_b: str,
 ) -> RecommendationResponse:
     tz_name = request.timezone or busy_response.timezone or "UTC"
     candidates = _generate_candidate_slots(
@@ -245,68 +289,51 @@ def generate_recommendations(
     if len(candidates) < 2:
         raise ValueError("Not enough available slots within the next 7 days to recommend a meeting.")
 
-    response_payload = _call_gemini(
-        client=client,
-        model_name=model_name,
-        scenario=request.scenario,
-        timezone=tz_name,
-        slots=candidates,
-        conversation=request.conversation,
-        previous_options=request.previous_options,
-    )
+    try:
+        system_prompt_a = load_prompt(prompt_option_a)
+    except (FileNotFoundError, ValueError) as exc:
+        raise ValueError(f"System prompt '{prompt_option_a}' could not be loaded.") from exc
 
-    options_payload = response_payload.get("options", [])
-    if not isinstance(options_payload, list) or len(options_payload) < 2:
-        raise ValueError("Gemini response did not contain two options.")
+    try:
+        system_prompt_b = load_prompt(prompt_option_b)
+    except (FileNotFoundError, ValueError) as exc:
+        raise ValueError(f"System prompt '{prompt_option_b}' could not be loaded.") from exc
 
     candidate_keys = {slot.key: slot for slot in candidates}
-    recommendation_options: List[RecommendationOption] = []
 
-    for raw_option in options_payload[:2]:
-        try:
-            start_str = raw_option["start"]
-            end_str = raw_option["end"]
-            label = raw_option.get("label") or "Option"
-            option_id = raw_option.get("id") or label.lower().replace(" ", "_")
-            reason = raw_option.get("reason") or ""
-        except (TypeError, KeyError) as exc:
-            raise ValueError("Gemini option payload is missing required fields.") from exc
-
-        try:
-            start_dt = datetime.fromisoformat(start_str)
-            end_dt = datetime.fromisoformat(end_str)
-        except ValueError as exc:
-            raise ValueError("Gemini option timestamps were not valid ISO datetimes.") from exc
-
-        if start_dt.tzinfo is None or end_dt.tzinfo is None:
-            raise ValueError("Gemini option timestamps must include timezone information.")
-
-        key = f"{start_dt.isoformat()}|{end_dt.isoformat()}"
-        if key not in candidate_keys:
-            logger.warning("Option %s does not match any candidate slot; skipping.", option_id)
-            continue
-
-        recommendation_options.append(
-            RecommendationOption(
-                id=option_id,
-                label=label,
-                start=start_dt,
-                end=end_dt,
-                reason=reason,
-            )
+    def _invoke(system_prompt: str, option_id: str, option_label: str) -> tuple[str, RecommendationOption]:
+        payload = _call_gemini(
+            client=client,
+            model_name=model_name,
+            scenario=request.scenario,
+            timezone=tz_name,
+            slots=candidates,
+            conversation=request.conversation,
+            previous_options=request.previous_options,
+            system_prompt=system_prompt,
+        )
+        return _extract_option_from_payload(
+            payload,
+            candidate_keys=candidate_keys,
+            option_id=option_id,
+            option_label=option_label,
         )
 
-    if len(recommendation_options) < 2:
-        raise ValueError("Gemini did not return two valid options from the provided slots.")
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_a = executor.submit(_invoke, system_prompt_a, "option_a", "Option A")
+        future_b = executor.submit(_invoke, system_prompt_b, "option_b", "Option B")
 
-    message = response_payload.get("message")
-    if not isinstance(message, str) or not message.strip():
-        raise ValueError("Gemini response is missing a descriptive message.")
+        message_a, option_a = future_a.result()
+        message_b, option_b = future_b.result()
+
+    combined_messages = [text for text in (message_a.strip(), message_b.strip()) if text]
+    if not combined_messages:
+        raise ValueError("Gemini responses did not include descriptive messages.")
 
     return RecommendationResponse(
         scenario=request.scenario,
-        message=message.strip(),
-        options=recommendation_options[:2],
+        message=DEFAULT_RECOMMENDATION_MESSAGE,
+        options=[option_a, option_b],
         model=model_name,
     )
 

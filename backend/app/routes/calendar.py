@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.schemas import BusyPayload, BusyResponse
 from app.services.calendar import normalize_busy_payload
-from app.state.busy import get_busy_response, set_busy_response
+from app.state.busy import clear_busy_response, get_busy_response, set_busy_response
 
 router = APIRouter()
 
@@ -34,4 +34,12 @@ def get_busy_availability() -> BusyResponse:
         )
     logger.info("Serving latest busy response with %d intervals", len(latest_busy_response.intervals))
     return latest_busy_response
+
+
+@router.delete("/busy", status_code=status.HTTP_204_NO_CONTENT)
+def delete_busy_availability() -> None:
+    """
+    Clear all stored busy intervals.
+    """
+    clear_busy_response()
 
